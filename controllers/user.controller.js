@@ -120,6 +120,12 @@ routes.bookSlot = async (req, res) => {
         { status: "pending", updatedAt: Date.now(), user: req.userId },
         { new: true }
         );
+
+        const user = await User.findById(req.userId);
+
+        user.bookings.push(slotId);
+
+        await user.save();
         
         const admins = await adminModel.find();
         const upiId = admins[0].upiId;
@@ -181,6 +187,12 @@ routes.cancelSlot = async (req, res) => {
         { new: true }
         );
     
+        const user = await User.findById(req.userId);
+
+        user.bookings = user.bookings.filter((slot) => slot !== slotId);
+
+        await user.save();
+
         return res.status(200).json({ msg: "Slot cancelled successfully", slot: updatedSlot });
     } catch (error) {
         console.log(error);

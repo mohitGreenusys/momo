@@ -5,6 +5,7 @@ const jwt = require("jsonwebtoken");
 const { loginValidation } = require("../utils/joi.validations");
 const slotModel = require("../models/slot.model.js");
 const userModel = require("../models/user.model.js");
+const mongoose = require("mongoose");
 
 const routes = {};
 
@@ -65,7 +66,7 @@ routes.login = async (req, res) => {
 
 routes.getProfile = async (req, res) => {
   try {
-    const admin = await Admin.findById(req.userId).select("-password") ;
+    const admin = await Admin.findById(req.userId).select("-password");
 
     return res
       .status(200)
@@ -81,21 +82,19 @@ routes.updatePaymentDetails = async (req, res) => {
     const { upiId, qrCode } = req.body;
 
     const updateFields = {};
-    
+
     if (upiId !== undefined) {
       updateFields.upiId = upiId;
     }
-    
+
     if (qrCode !== undefined) {
       updateFields.qrCode = qrCode;
     }
-    
-    const admin = await Admin.findByIdAndUpdate(
-      req.userId,
-      updateFields,
-      { new: true }
-    );
-    
+
+    const admin = await Admin.findByIdAndUpdate(req.userId, updateFields, {
+      new: true,
+    });
+
     return res
       .status(200)
       .json({ msg: "Payment details updated successfully", admin });
@@ -140,9 +139,7 @@ routes.createSlot = async (req, res) => {
       await slot.save();
     }
 
-    return res
-      .status(200)
-      .json({ msg: "Slot created successfully",  });
+    return res.status(200).json({ msg: "Slot created successfully" });
   } catch (error) {
     console.log(error);
     return res.status(500).json({ msg: "Internal server error", error: error });
@@ -155,12 +152,14 @@ routes.getSlots = async (req, res) => {
     var slots = [];
     if (inputDate) {
       const date = new Date(inputDate);
-      slots = await slotModel.find({
-        date: {
+      slots = await slotModel
+        .find({
+          date: {
             $gte: date.setHours(0, 0, 0, 0),
             $lt: date.setHours(23, 59, 59, 999),
-        },
-      }).populate("user");
+          },
+        })
+        .populate("user");
     } else {
       slots = await slotModel.find().populate("user");
     }
@@ -190,6 +189,9 @@ routes.updateSlot = async (req, res) => {
     const slotId = req.query.slotId;
     const status = req.query.status;
 
+    if (!mongoose.Types.ObjectId.isValid(slotId))
+      return res.status(404).json({ msg: "invalid slot id" });
+
     if (!slotId || !status) {
       return res.status(400).json({ msg: "Invalid request" });
     }
@@ -198,11 +200,33 @@ routes.updateSlot = async (req, res) => {
       return res.status(400).json({ msg: "Invalid status" });
     }
 
-    const slot = await slotModel.findByIdAndUpdate(slotId, {
-      status, updatedAt: Date.now()
-    });
+    if(status === "available"){
+      
+      const slot = await slotModel.findByIdAndUpdate(slotId, {
+        status,
+        user: null,
+        paymentReferenceNumber: null,
+        paymentBy: null,
+        updatedAt: Date.now(),
+      });
 
-    return res.status(200).json({ msg: "Slot updated successfully", slot });
+      const user = await userModel.findById(slot?.user);
+  
+      if (user) {
+        user.bookings = user?.bookings.filter((slot) => slot !== slotId);
+  
+        await user.save();
+      }
+    }else{
+
+      const slot = await slotModel.findByIdAndUpdate(slotId, {
+        status,
+        updatedAt: Date.now(),
+      });
+
+    }
+
+    return res.status(200).json({ msg: "Slot updated successfully", });
   } catch (error) {
     console.log(error);
     return res.status(500).json({ msg: "Internal server error", error: error });
@@ -216,19 +240,25 @@ routes.deleteSlot = async (req, res) => {
     if (!slotId) {
       return res.status(400).json({ msg: "Invalid request" });
     }
+    if (!mongoose.Types.ObjectId.isValid(slotId))
+      return res.status(404).json({ msg: "invalid slot id" });
 
     const slot = await slotModel.findById(slotId);
 
     if (!slot) {
-        return res.status(400).json({ msg: "Slot not found" });
+      return res.status(400).json({ msg: "Slot not found" });
     }
 
     if (slot.status === "booked") {
-        return res.status(400).json({ msg: "Slot already booked. please change the status to available" });
+      return res.status(400).json({
+        msg: "Slot already booked. please change the status to available",
+      });
     }
 
     if (slot.status === "pending") {
-        return res.status(400).json({ msg: "Slot already pending. please change the status to available" });
+      return res.status(400).json({
+        msg: "Slot already pending. please change the status to available",
+      });
     }
 
     await slotModel.findByIdAndDelete(slotId);
